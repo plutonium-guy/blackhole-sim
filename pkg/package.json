@@ -1,0 +1,15 @@
+{
+  "name": "blackhole-sim",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "blackhole_sim_bg.wasm",
+    "blackhole_sim.js",
+    "blackhole_sim.d.ts"
+  ],
+  "main": "blackhole_sim.js",
+  "types": "blackhole_sim.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

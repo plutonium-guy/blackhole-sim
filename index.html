@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Black Hole Simulator — Kerr Metric</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+
+        #info {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            color: rgba(255,255,255,0.6);
+            font-size: 12px;
+            pointer-events: none;
+            text-shadow: 0 0 4px #000;
+        }
+
+        /* ── Control Panel ─────────────────────────────── */
+        #panel {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 280px;
+            height: 100vh;
+            background: rgba(0,0,0,0.85);
+            border-left: 1px solid rgba(255,255,255,0.1);
+            overflow-y: auto;
+            padding: 12px;
+            color: #ccc;
+            font-size: 11px;
+            transition: transform 0.3s;
+            scrollbar-width: thin;
+            scrollbar-color: #333 transparent;
+        }
+        #panel.hidden { transform: translateX(100%); }
+
+        #toggle-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 10;
+            background: rgba(0,0,0,0.7);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #ccc;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 11px;
+            border-radius: 3px;
+        }
+        #toggle-btn:hover { background: rgba(40,40,40,0.9); }
+        #panel:not(.hidden) ~ #toggle-btn { right: 292px; }
+
+        .group {
+            margin-bottom: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 4px;
+            padding: 8px;
+        }
+        .group-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #888;
+            margin-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 4px;
+        }
+
+        .param {
+            margin-bottom: 6px;
+            display: flex;
+            flex-direction: column;
+        }
+        .param-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+        .param-name { color: #aaa; font-size: 10px; }
+        .param-val {
+            color: #4af;
+            font-size: 10px;
+            min-width: 40px;
+            text-align: right;
+        }
+        .param-eq {
+            color: #666;
+            font-size: 9px;
+            font-style: italic;
+            margin-bottom: 2px;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: #222;
+            border-radius: 2px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #4af;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .reset-btn {
+            width: 100%;
+            padding: 6px;
+            margin-top: 8px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #888;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 10px;
+            border-radius: 3px;
+        }
+        .reset-btn:hover { background: rgba(255,255,255,0.1); color: #ccc; }
+
+        .derived {
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 4px;
+            font-size: 10px;
+            color: #777;
+            line-height: 1.6;
+        }
+        .derived span { color: #4af; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="info">
+        Click: spawn mass &bull; Shift+Click: shoot photon &bull; Drag: orbit &bull; Scroll: zoom &bull; [P] panel
+    </div>
+
+    <button id="toggle-btn" onclick="togglePanel()">&#9881; Params</button>
+
+    <div id="panel">
+        <div class="group">
+            <div class="group-title">Black Hole</div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Mass (M)</span>
+                    <span class="param-val" id="v-mass">0.50</span>
+                </div>
+                <div class="param-eq">R_s = 2GM/c&sup2;</div>
+                <input type="range" id="sl-mass" min="0.1" max="2.0" step="0.01" value="0.5"
+                       oninput="updateVal('mass', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Spin (a/M)</span>
+                    <span class="param-val" id="v-spin">0.00</span>
+                </div>
+                <div class="param-eq">Kerr: 0=Schwarzschild, 0.998=near-extremal</div>
+                <input type="range" id="sl-spin" min="0.0" max="0.998" step="0.001" value="0.0"
+                       oninput="updateVal('spin', this.value)">
+            </div>
+        </div>
+
+        <div class="group">
+            <div class="group-title">Accretion Disk</div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Inner Radius (r_in)</span>
+                    <span class="param-val" id="v-disk-inner">3.0</span>
+                </div>
+                <div class="param-eq">ISCO: 6M (a=0) → M (a→1)</div>
+                <input type="range" id="sl-disk-inner" min="1.0" max="8.0" step="0.1" value="3.0"
+                       oninput="updateVal('disk-inner', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Outer Radius (r_out)</span>
+                    <span class="param-val" id="v-disk-outer">12.0</span>
+                </div>
+                <input type="range" id="sl-disk-outer" min="5.0" max="30.0" step="0.5" value="12.0"
+                       oninput="updateVal('disk-outer', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Temperature</span>
+                    <span class="param-val" id="v-disk-temp">1.00</span>
+                </div>
+                <div class="param-eq">T &prop; r^(-3/4) &times; Novikov-Thorne</div>
+                <input type="range" id="sl-disk-temp" min="0.1" max="3.0" step="0.05" value="1.0"
+                       oninput="updateVal('disk-temp', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Opacity</span>
+                    <span class="param-val" id="v-disk-opacity">0.90</span>
+                </div>
+                <input type="range" id="sl-disk-opacity" min="0.0" max="1.0" step="0.01" value="0.9"
+                       oninput="updateVal('disk-opacity', this.value)">
+            </div>
+        </div>
+
+        <div class="group">
+            <div class="group-title">Relativistic Effects</div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Doppler Beaming</span>
+                    <span class="param-val" id="v-doppler">1.00</span>
+                </div>
+                <div class="param-eq">D = 1/&gamma;(1 - v&middot;n&#770;)</div>
+                <input type="range" id="sl-doppler" min="0.0" max="2.0" step="0.05" value="1.0"
+                       oninput="updateVal('doppler', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Gravitational Redshift</span>
+                    <span class="param-val" id="v-redshift">1.00</span>
+                </div>
+                <div class="param-eq">g = &radic;(1 - r_s/r)</div>
+                <input type="range" id="sl-redshift" min="0.0" max="2.0" step="0.05" value="1.0"
+                       oninput="updateVal('redshift', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Bloom / Glow</span>
+                    <span class="param-val" id="v-bloom">0.10</span>
+                </div>
+                <input type="range" id="sl-bloom" min="0.0" max="0.5" step="0.01" value="0.1"
+                       oninput="updateVal('bloom', this.value)">
+            </div>
+        </div>
+
+        <div class="group">
+            <div class="group-title">Integration</div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Step Size (d&lambda;)</span>
+                    <span class="param-val" id="v-step-size">0.08</span>
+                </div>
+                <div class="param-eq">Geodesic affine parameter step</div>
+                <input type="range" id="sl-step-size" min="0.02" max="0.2" step="0.005" value="0.08"
+                       oninput="updateVal('step-size', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">Max Steps</span>
+                    <span class="param-val" id="v-max-steps">300</span>
+                </div>
+                <input type="range" id="sl-max-steps" min="50" max="600" step="10" value="300"
+                       oninput="updateVal('max-steps', this.value)">
+            </div>
+
+            <div class="param">
+                <div class="param-header">
+                    <span class="param-name">FOV</span>
+                    <span class="param-val" id="v-fov">1.20</span>
+                </div>
+                <input type="range" id="sl-fov" min="0.3" max="2.5" step="0.05" value="1.2"
+                       oninput="updateVal('fov', this.value)">
+            </div>
+        </div>
+
+        <div class="derived" id="derived-info">
+            Schwarzschild radius: <span id="d-rs">1.00</span><br>
+            Event horizon: <span id="d-rh">1.00</span><br>
+            Ergosphere: <span id="d-ergo">1.00</span><br>
+            ISCO (prograde): <span id="d-isco">3.00</span><br>
+            Photon sphere: <span id="d-photon">1.50</span>
+        </div>
+
+        <button class="reset-btn" onclick="resetAll()">Reset to defaults</button>
+    </div>
+
+    <script>
+        function updateVal(name, val) {
+            const el = document.getElementById('v-' + name);
+            if (el) el.textContent = parseFloat(val).toFixed(2);
+            updateDerived();
+        }
+
+        function updateDerived() {
+            const M = parseFloat(document.getElementById('sl-mass').value);
+            const chi = parseFloat(document.getElementById('sl-spin').value);
+            const a = chi * M;
+            const rs = 2 * M;
+            const rh = M + Math.sqrt(Math.max(M * M - a * a, 0));
+            const ergo = M + Math.sqrt(Math.max(M * M - a * a, 0)); // equatorial
+            const ergo_eq = 2 * M; // equatorial ergosphere always at 2M
+
+            // ISCO for prograde orbits (Kerr)
+            let z1 = 1 + Math.pow(1 - chi * chi, 1/3) * (Math.pow(1 + chi, 1/3) + Math.pow(1 - chi, 1/3));
+            let z2 = Math.sqrt(3 * chi * chi + z1 * z1);
+            let isco = M * (3 + z2 - Math.sqrt((3 - z1) * (3 + z1 + 2 * z2)));
+
+            // Photon sphere (prograde)
+            let photon = 2 * M * (1 + Math.cos(2/3 * Math.acos(-chi)));
+
+            document.getElementById('d-rs').textContent = rs.toFixed(2);
+            document.getElementById('d-rh').textContent = rh.toFixed(3);
+            document.getElementById('d-ergo').textContent = ergo_eq.toFixed(2);
+            document.getElementById('d-isco').textContent = isco.toFixed(3);
+            document.getElementById('d-photon').textContent = photon.toFixed(3);
+        }
+
+        const DEFAULTS = {
+            'sl-mass': '0.5', 'sl-spin': '0', 'sl-disk-inner': '3', 'sl-disk-outer': '12',
+            'sl-disk-temp': '1', 'sl-disk-opacity': '0.9', 'sl-doppler': '1', 'sl-redshift': '1',
+            'sl-bloom': '0.1', 'sl-step-size': '0.08', 'sl-max-steps': '300', 'sl-fov': '1.2'
+        };
+
+        function resetAll() {
+            for (const [id, val] of Object.entries(DEFAULTS)) {
+                const el = document.getElementById(id);
+                if (el) { el.value = val; }
+                const name = id.replace('sl-', '');
+                updateVal(name, val);
+            }
+        }
+
+        function togglePanel() {
+            document.getElementById('panel').classList.toggle('hidden');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'p' || e.key === 'P') togglePanel();
+        });
+
+        updateDerived();
+    </script>
+
+    <script type="module">
+        import init from './pkg/blackhole_sim.js';
+        init();
+    </script>
+</body>
+</html>
